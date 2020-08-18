@@ -1,12 +1,47 @@
 #![feature(llvm_asm)]
-const STACK_SIZE: isize = 1024;
+#![feature(naked_functions)]
+
+use std::ptr;
+const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2; // 2MB
+const MAX_THREADS: usize = 4;
+static RUNTIME: usize = 0;
+pub struct Runtime {
+    threads: Vec<Thread>,
+    current: usize,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+enum State {
+    Available,
+    Running,
+    Ready,
+}
+
+struct Thread {
+    id: usize,
+    stack: Vec<u8>,
+    ctx: ThreadContext,
+    state: State,
+}
 
 #[derive(Debug, Default)]
 #[repr(C)]
 struct ThreadContext {
-    rsp: u64
+    rsp: u64,
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    rbx: u64,
+    rbp: u64,
 }
+
 fn main() {
+    start_stack_switch();
+}
+
+const STACK_SIZE: isize = 1024;
+fn start_stack_switch() {
     let mut ctx = ThreadContext::default();
     let mut stack = vec![0_u8; STACK_SIZE as usize];
     unsafe {
@@ -15,13 +50,13 @@ fn main() {
         std::ptr::write(stack_bottom_aligned.offset(-16) as *mut u64, message as u64);
         ctx.rsp = stack_bottom_aligned.offset(-16) as u64;
         stack_switch(&mut ctx);
-
     }
-    
 }
 
 fn message() {
-    println!("ANOTHER STACK");
+    let s = "another stack";
+    let s1 = String::from(s);
+    println!("{}", s1);
     loop {}
 }
 
@@ -30,9 +65,9 @@ unsafe fn stack_switch(new: *const ThreadContext) {
         mov 0x00($0), %rsp
         ret
     "
-    :               // output
-    : "r"(new)      // input
-    :               // clobber list
-    : "alignstack"  // options
-);
+        :               // output
+        : "r"(new)      // input
+        :               // clobber list
+        : "alignstack"  // options
+    );
 }
